@@ -1,0 +1,474 @@
+// Import the required Firebase SDK functions
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+import {
+  getDatabase,
+  ref,
+  set,
+  onValue,
+  remove
+} from "firebase/database";
+
+// Your Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyCA8k3MG9FGgjLa4fkQ979G2hVQf9DNsYs",
+  authDomain: "say-it-loud-8e48f.firebaseapp.com",
+  databaseURL: "https://say-it-loud-8e48f-default-rtdb.firebaseio.com",
+  projectId: "say-it-loud-8e48f",
+  storageBucket: "say-it-loud-8e48f.firebasestorage.app",
+  messagingSenderId: "677195341918",
+  appId: "1:677195341918:web:ea837b45ccfc11f7f454cf",
+  measurementId: "G-N6KB82D5GD"
+};
+
+// Initialize Firebase
+const appInit = initializeApp(firebaseConfig);
+const analytics = getAnalytics(appInit);
+const db = getDatabase(appInit);
+
+// Global Variables
+let timerInterval = null;
+let firebaseUpdateInterval = null;
+let startTime = null;
+let elapsedTime = parseInt(localStorage.getItem("elapsedTime")) || 0; // seconds
+let isRunning = false;
+let currentSession = null;
+let username = localStorage.getItem("studyUsername") || "";
+let roomId = localStorage.getItem("roomId") || null;
+let roomName = localStorage.getItem("roomName") || "";
+
+// Get HTML Elements
+const studyTimerEl = document.getElementById("studyTimer");
+const toggleTimerBtn = document.getElementById("toggleTimer");
+const usernameInput = document.getElementById("usernameInput");
+const saveUsernameBtn = document.getElementById("saveUsernameBtn");
+const createRoomBtn = document.getElementById("createRoomBtn");
+const joinRoomBtn = document.getElementById("joinRoomBtn");
+const leaveRoomBtn = document.getElementById("leaveRoomBtn");
+const deleteAccountBtn = document.getElementById("deleteAccountBtn");
+const userSetupDiv = document.getElementById("userSetup");
+const userDisplayDiv = document.getElementById("userDisplay");
+const displayedUsernameEl = document.getElementById("displayedUsername");
+const statusIndicator = document.getElementById("statusIndicator");
+const motivationalQuoteEl = document.getElementById("motivationalQuote");
+const streakCounterEl = document.getElementById("streakCounter");
+const sessionTableBody = document.querySelector("#sessionTable tbody");
+const leaderboardTableBody = document.querySelector("#leaderboardTable tbody");
+const animatedClockEl = document.getElementById("animatedClock");
+const prevDayBtn = document.getElementById("prevDayBtn");
+const prevDayDataEl = document.getElementById("prevDayData");
+const appContent = document.getElementById("appContent");
+const leaderboardDropdown = document.getElementById("leaderboardDropdown");
+
+// Audio Elements
+const startSound = document.getElementById("startSound");
+const pauseSound = document.getElementById("pauseSound");
+
+// Array of motivational quotes
+const quotes = [
+  "Keep pushing your limits!",
+  "Small steps every day.",
+  "Study hard, shine bright!",
+  "Your future self will thank you.",
+  "Stay focused and never give up!",
+];
+
+function displayRandomQuote() {
+  const randomIndex = Math.floor(Math.random() * quotes.length);
+  motivationalQuoteEl.innerText = quotes[randomIndex];
+}
+
+function updateClock() {
+  const now = new Date();
+  animatedClockEl.innerText = now.toLocaleTimeString();
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// Format seconds into HH:MM:SS
+function formatTime(seconds) {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return (
+    String(hrs).padStart(2, "0") +
+    ":" +
+    String(mins).padStart(2, "0") +
+    ":" +
+    String(secs).padStart(2, "0")
+  );
+}
+
+// Format leaderboard time as "Xh Ym"
+function formatLeaderboardTime(seconds) {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  return `${hrs}h ${mins}m`;
+}
+
+function updateTimerDisplay() {
+  studyTimerEl.innerText = formatTime(elapsedTime);
+  localStorage.setItem("elapsedTime", elapsedTime);
+}
+
+// Local Session Log Functions
+function getSessionKey() {
+  return "sessionLog_" + new Date().toDateString();
+}
+
+function addLocalSessionLog(session) {
+  if (session.duration < 300) return; // Ignore sessions shorter than 5 minutes
+  const key = getSessionKey();
+  let sessions = JSON.parse(localStorage.getItem(key)) || [];
+  sessions.push(session);
+  localStorage.setItem(key, JSON.stringify(sessions));
+  loadLocalSessionLog();
+}
+
+function loadLocalSessionLog() {
+  const key = getSessionKey();
+  sessionTableBody.innerHTML = "";
+  let sessions = JSON.parse(localStorage.getItem(key)) || [];
+  sessions = sessions.filter(session => session.duration >= 300);
+  localStorage.setItem(key, JSON.stringify(sessions));
+  sessions.forEach((session) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `<td>${new Date(session.start).toLocaleTimeString()}</td>
+                     <td>${new Date(session.end).toLocaleTimeString()}</td>
+                     <td>${formatTime(session.duration)}</td>`;
+    sessionTableBody.appendChild(row);
+  });
+}
+
+// Check for new day; reset local data if needed.
+function checkDailyReset() {
+  const todayStr = new Date().toDateString();
+  const storedDate = localStorage.getItem("studyDate");
+  if (storedDate !== todayStr) {
+    savePreviousDayData(storedDate);
+    elapsedTime = 0;
+    localStorage.setItem("studyDate", todayStr);
+    localStorage.removeItem("hasStudiedToday");
+    localStorage.setItem("streak", 0);
+    streakCounterEl.innerText = 0;
+    localStorage.removeItem(getSessionKey());
+    updateTimerDisplay();
+    updateStatus("Idle");
+    loadLocalSessionLog();
+  }
+}
+
+// Save previous day's leaderboard data (stub)
+function savePreviousDayData(dateStr) {
+  if (!dateStr) return;
+  // Save global history
+  set(ref(db, "history/" + dateStr + "/globalLeaderboard"), { message: "Global Leaderboard data for " + dateStr });
+  // If in a room, save room history
+  if (roomId) {
+    set(ref(db, "history/" + dateStr + "/rooms/" + roomId), { message: "Room Leaderboard data for room " + roomName + " (" + roomId +") on " + dateStr });
+  }
+}
+
+// Timer Functions
+function startTimer() {
+  if (isRunning) return;
+  isRunning = true;
+  localStorage.setItem("timerRunning", "true");
+  updateStatus("Studying");
+  toggleTimerBtn.innerText = "Pause";
+  startSound.play();
+  if (!currentSession) {
+    currentSession = { start: new Date().toISOString(), duration: 0 };
+  }
+  startTime = Date.now() - elapsedTime * 1000;
+  timerInterval = setInterval(() => {
+    elapsedTime = Math.floor((Date.now() - startTime) / 1000);
+    updateTimerDisplay();
+  }, 1000);
+  firebaseUpdateInterval = setInterval(() => {
+    updateLeaderboard(username, elapsedTime);
+  }, 5000);
+}
+
+function pauseTimer() {
+  if (!isRunning) return;
+  isRunning = false;
+  localStorage.setItem("timerRunning", "false");
+  updateStatus("Paused");
+  toggleTimerBtn.innerText = "Start";
+  pauseSound.play();
+  clearInterval(timerInterval);
+  clearInterval(firebaseUpdateInterval);
+  firebaseUpdateInterval = null;
+  if (currentSession) {
+    currentSession.end = new Date().toISOString();
+    currentSession.duration = elapsedTime;
+    addLocalSessionLog(currentSession);
+    updateLeaderboard(username, elapsedTime);
+    increaseStreak();
+    currentSession = null;
+  }
+}
+
+function updateStatus(status) {
+  statusIndicator.innerText = status;
+}
+
+// Update leaderboard entries in Firebase: always update global; if in room, update room as well.
+function updateLeaderboard(user, timeSec) {
+  if (!user) return;
+  // Global leaderboard update
+  set(ref(db, "leaderboard/" + user), { totalSec: timeSec, username: user });
+  // Room leaderboard update if the user is in a room
+  if (roomId) {
+    set(ref(db, "rooms/" + roomId + "/leaderboard/" + user), { totalSec: timeSec, username: user });
+  }
+}
+
+// Load leaderboard based on dropdown selection
+function loadLeaderboard() {
+  const selected = leaderboardDropdown.value;
+  let leaderRef;
+  if (selected === "global") {
+    leaderRef = ref(db, "leaderboard");
+  } else if (selected === "room" && roomId) {
+    leaderRef = ref(db, "rooms/" + roomId + "/leaderboard");
+  } else {
+    leaderRef = ref(db, "leaderboard");
+  }
+  onValue(leaderRef, (snapshot) => {
+    const data = snapshot.val();
+    const arr = [];
+    for (let user in data) {
+      arr.push({ user: user, totalSec: data[user].totalSec });
+    }
+    arr.sort((a, b) => b.totalSec - a.totalSec);
+    leaderboardTableBody.innerHTML = "";
+    arr.forEach((item, index) => {
+      const rank = index + 1;
+      const formattedTime = formatLeaderboardTime(item.totalSec);
+      const row = document.createElement("tr");
+      if (rank === 1) row.classList.add("first");
+      else if (rank === 2) row.classList.add("second");
+      else if (rank === 3) row.classList.add("third");
+      row.innerHTML = `<td>${rank}</td><td>${item.user}</td><td>${formattedTime}</td>`;
+      leaderboardTableBody.appendChild(row);
+    });
+  });
+}
+leaderboardDropdown.addEventListener("change", loadLeaderboard);
+
+// Load and increase daily streak functions
+function loadStreak() {
+  let streak = localStorage.getItem("streak") || 0;
+  streakCounterEl.innerText = streak;
+}
+
+function increaseStreak() {
+  if (!localStorage.getItem("hasStudiedToday")) {
+    let streak = parseInt(localStorage.getItem("streak")) || 0;
+    streak++;
+    localStorage.setItem("streak", streak);
+    streakCounterEl.innerText = streak;
+    localStorage.setItem("hasStudiedToday", "true");
+  }
+}
+
+// Room Feature Functions
+
+// Generate a unique room code
+function generateRoomCode() {
+  return Math.random().toString(36).substr(2, 6).toUpperCase();
+}
+
+// Create Room: prompt for room name, generate unique code, and store in Firebase.
+document.getElementById("createRoomBtn").addEventListener("click", createRoom);
+function createRoom() {
+  const inputRoomName = prompt("Enter Room Name:");
+  if (!inputRoomName) {
+    alert("Room name cannot be empty.");
+    return;
+  }
+  roomId = generateRoomCode();
+  roomName = inputRoomName;
+  // Create room in Firebase under "rooms/ROOM_ID"
+  set(ref(db, "rooms/" + roomId), { roomName: roomName });
+  // Update leaderboard dropdown to include the room option
+  leaderboardDropdown.style.display = "block";
+  let roomOption = leaderboardDropdown.querySelector("option[value='room']");
+  if (!roomOption) {
+    roomOption = document.createElement("option");
+    roomOption.value = "room";
+    leaderboardDropdown.appendChild(roomOption);
+  }
+  roomOption.text = "Room Leaderboard (" + roomName + " - " + roomId + ")";
+  roomOption.style.display = "block";
+  leaderboardDropdown.value = "room";
+  // Update UI: hide create & join buttons, show leave room button.
+  document.getElementById("createRoomBtn").style.display = "none";
+  document.getElementById("joinRoomBtn").style.display = "none";
+  leaveRoomBtn.style.display = "inline-block";
+  // Save room info to localStorage
+  localStorage.setItem("roomId", roomId);
+  localStorage.setItem("roomName", roomName);
+}
+
+// Join Room: prompt for a room code and if it exists, join it.
+document.getElementById("joinRoomBtn").addEventListener("click", joinRoom);
+function joinRoom() {
+  const inputRoomCode = prompt("Enter Room Code:");
+  if (!inputRoomCode) {
+    alert("Room code cannot be empty.");
+    return;
+  }
+  const roomRef = ref(db, "rooms/" + inputRoomCode);
+  onValue(roomRef, (snapshot) => {
+    const roomData = snapshot.val();
+    if (roomData) {
+      roomId = inputRoomCode;
+      roomName = roomData.roomName;
+      localStorage.setItem("roomId", roomId);
+      localStorage.setItem("roomName", roomName);
+      const lbDropdown = leaderboardDropdown;
+      let roomOption = lbDropdown.querySelector("option[value='room']");
+      if (!roomOption) {
+        roomOption = document.createElement("option");
+        roomOption.value = "room";
+        lbDropdown.appendChild(roomOption);
+      }
+      roomOption.text = "Room Leaderboard (" + roomName + " - " + roomId + ")";
+      roomOption.style.display = "block";
+      lbDropdown.value = "room";
+      document.getElementById("createRoomBtn").style.display = "none";
+      document.getElementById("joinRoomBtn").style.display = "none";
+      leaveRoomBtn.style.display = "inline-block";
+    } else {
+      alert("Room not found. Please check the room code.");
+    }
+  }, { onlyOnce: true });
+}
+
+// Leave Room: remove user's entry from the room leaderboard and reset UI.
+leaveRoomBtn.addEventListener("click", leaveRoom);
+function leaveRoom() {
+  if (!roomId) return;
+  // Remove user's room leaderboard entry
+  remove(ref(db, "rooms/" + roomId + "/leaderboard/" + username));
+  // Optionally, if room leaderboard becomes empty, remove the room
+  onValue(ref(db, "rooms/" + roomId + "/leaderboard"), (snapshot) => {
+    if (!snapshot.exists()) {
+      remove(ref(db, "rooms/" + roomId));
+    }
+  }, { onlyOnce: true });
+  roomId = null;
+  roomName = "";
+  localStorage.removeItem("roomId");
+  localStorage.removeItem("roomName");
+  leaderboardDropdown.value = "global";
+  const roomOption = leaderboardDropdown.querySelector("option[value='room']");
+  if (roomOption) {
+    roomOption.style.display = "none";
+  }
+  document.getElementById("createRoomBtn").style.display = "inline-block";
+  document.getElementById("joinRoomBtn").style.display = "inline-block";
+  leaveRoomBtn.style.display = "none";
+}
+
+// Delete Account Button: clears all local cache, removes user's leaderboard & session entries, and resets the app.
+if (deleteAccountBtn) {
+  deleteAccountBtn.addEventListener("click", deleteAccount);
+}
+function deleteAccount() {
+  if (confirm("Are you sure you want to delete your account? This will remove all your data.")) {
+    remove(ref(db, "leaderboard/" + username));
+    if (roomId) {
+      remove(ref(db, "rooms/" + roomId + "/leaderboard/" + username));
+    }
+    localStorage.clear();
+    sessionStorage.clear();
+    document.cookie.split(";").forEach(function(c) {
+      document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date(0).toUTCString() + ";path=/");
+    });
+    if ("caches" in window) {
+      caches.keys().then((names) => {
+        names.forEach((name) => {
+          caches.delete(name);
+        });
+      });
+    }
+    location.reload();
+  }
+}
+
+// Event Listeners
+toggleTimerBtn.addEventListener("click", () => {
+  if (!username) {
+    alert("Please set your name first.");
+    return;
+  }
+  checkDailyReset();
+  if (isRunning) {
+    pauseTimer();
+  } else {
+    startTimer();
+  }
+});
+
+saveUsernameBtn.addEventListener("click", () => {
+  const inputName = usernameInput.value.trim();
+  if (inputName) {
+    username = inputName;
+    localStorage.setItem("studyUsername", username);
+    userSetupDiv.style.display = "none";
+    displayedUsernameEl.innerText = username;
+    userDisplayDiv.style.display = "block";
+    appContent.style.display = "block";
+    loadLocalSessionLog();
+    loadLeaderboard();
+    loadStreak();
+  } else {
+    alert("Please enter a valid name.");
+  }
+});
+
+prevDayBtn.addEventListener("click", () => {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const dateKey = yesterday.toDateString();
+  const historyRef = ref(db, "history/" + dateKey + "/globalLeaderboard");
+  onValue(historyRef, (snapshot) => {
+    const data = snapshot.val();
+    if (data) {
+      prevDayDataEl.innerText = JSON.stringify(data);
+    } else {
+      prevDayDataEl.innerText = "No data for " + dateKey;
+    }
+  }, { onlyOnce: true });
+});
+
+window.addEventListener("load", () => {
+  const storedElapsed = parseInt(localStorage.getItem("elapsedTime"));
+  if (!isNaN(storedElapsed)) {
+    elapsedTime = storedElapsed;
+    updateTimerDisplay();
+  }
+  if (localStorage.getItem("timerRunning") === "true") {
+    isRunning = false;
+    localStorage.setItem("timerRunning", "false");
+    updateStatus("Paused");
+    toggleTimerBtn.innerText = "Start";
+  }
+  checkDailyReset();
+  loadLeaderboard();
+  loadLocalSessionLog();
+  loadStreak();
+  displayRandomQuote();
+  if (username) {
+    userSetupDiv.style.display = "none";
+    displayedUsernameEl.innerText = username;
+    userDisplayDiv.style.display = "block";
+    appContent.style.display = "block";
+  } else {
+    appContent.style.display = "none";
+  }
+});
