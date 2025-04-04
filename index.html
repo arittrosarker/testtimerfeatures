@@ -18,18 +18,25 @@
       <!-- Header Section -->
       <header>
         <h1>Study Timer & Leaderboard</h1>
+        <!-- Theme Selector -->
+        <div class="theme-selector">
+          <label for="themeSelect">Select Theme:</label>
+          <select id="themeSelect">
+            <option value="neon">Neon</option>
+            <option value="cozy">Cozy</option>
+          </select>
+        </div>
         <!-- User Setup: shown only if no name is set -->
         <div id="userSetup">
           <input type="text" id="usernameInput" placeholder="Enter your name" />
           <button id="saveUsernameBtn">Save Name</button>
         </div>
-        <!-- When the name is set, display user's name and room options -->
+        <!-- When the name is set, display user's name and the Delete Account button -->
         <div id="userDisplay" style="display:none;">
           Hello, <span id="displayedUsername"></span>
-          <button id="createRoomBtn" class="room-btn">Create Room</button>
-          <button id="joinRoomBtn" class="room-btn">Join Room</button>
-          <button id="leaveRoomBtn" class="room-btn" style="display:none;">Leave Room</button>
-          <button id="deleteAccountBtn" class="room-btn">Delete Account</button>
+          <button id="deleteAccountBtn" class="delete-btn">
+            Delete Account
+          </button>
         </div>
       </header>
 
@@ -42,13 +49,17 @@
               <!-- Timer Section -->
               <section class="timer-section">
                 <div class="animated-clock" id="animatedClock"></div>
-                <div class="status-indicator" id="statusIndicator">Idle</div>
-                <div class="study-timer" id="studyTimer">00:00:00</div>
+                <div class="status-indicator" id="statusIndicator">
+                  Idle
+                </div>
+                <div class="study-timer" id="studyTimer">
+                  00:00:00
+                </div>
                 <div class="timer-controls">
                   <!-- Single toggle button for Start/Pause -->
                   <button id="toggleTimer">Start</button>
                 </div>
-                <!-- Audio elements (ensure these files are available in your project) -->
+                <!-- Audio elements (ensure these files are present in your project) -->
                 <audio id="startSound" src="start.mp3"></audio>
                 <audio id="pauseSound" src="pause.mp3"></audio>
               </section>
@@ -56,15 +67,14 @@
               <!-- Additional Info -->
               <section class="additional-info">
                 <div class="motivational-quote" id="motivationalQuote"></div>
-                <div class="daily-streak">
-                  Streak: <span id="streakCounter">0</span> days
-                </div>
               </section>
 
               <!-- Session Log (local for today) -->
               <section class="session-log">
                 <h2>Session Log</h2>
-                <p class="tip">*Only sessions longer than 5 minutes will be saved.*</p>
+                <p class="tip">
+                  *Only sessions longer than 5 minutes will be saved.*
+                </p>
                 <table id="sessionTable">
                   <thead>
                     <tr>
@@ -82,10 +92,6 @@
             <div class="right-section">
               <section class="leaderboard-section">
                 <h2>Leaderboard</h2>
-                <select id="leaderboardDropdown">
-                  <option value="global">Global Leaderboard</option>
-                  <option value="room" style="display:none;">Room Leaderboard</option>
-                </select>
                 <table id="leaderboardTable">
                   <thead>
                     <tr>
@@ -96,10 +102,6 @@
                   </thead>
                   <tbody></tbody>
                 </table>
-                <div class="previous-day">
-                  <button id="prevDayBtn">View Previous Day's Data</button>
-                  <div id="prevDayData"></div>
-                </div>
               </section>
             </div>
           </div>
